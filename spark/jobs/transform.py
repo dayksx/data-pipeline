@@ -5,6 +5,7 @@ from pyspark.sql import functions as F
 BASE = os.getenv("PIPELINE_ROOT", "/opt/pipeline")
 input_path = f"{BASE}/data/bronze/retails_raw"
 output_path = f"{BASE}/data/silver/retails_clean"
+SALT = os.getenv("PII_HASH_SALT", "secret")
 
 def main() -> None:
     spark = SparkSession.builder.appName("transform").config("spark.sql.session.timeZone", "UTC").getOrCreate()
@@ -58,6 +59,9 @@ def main() -> None:
                 (F.lower(F.trim(F.col("country"))) != "utopia")
             )
 
+            # Anonymized Customer ID
+            .withColumn("customer_id_hash", F.sha2(F.concat(F.col("customer_id"), F.lit(SALT)), 256))
+
             # Drop duplicates
             .dropDuplicates(["invoice_no", "stock_code", "invoice_date", "quantity"])
             
@@ -76,7 +80,7 @@ def main() -> None:
                 "invoice_date",
                 "sale_date",
                 "unit_price",
-                "customer_id",
+                "customer_id_hash",
                 "country",
                 "revenue",
             )
