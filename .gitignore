@@ -1,0 +1,4 @@
+.venv/
+data/bronze/
+data/silver/
+airflow/logs/
