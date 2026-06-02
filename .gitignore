@@ -3,4 +3,5 @@
 .env
 data/bronze/
 data/silver/
+data/gold/
 airflow/logs/
