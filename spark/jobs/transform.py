@@ -3,6 +3,11 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 BASE = os.getenv("PIPELINE_ROOT", "/opt/pipeline")
+postgres_host = os.getenv("POSTGRES_HOST", "localhost")
+postgres_db = os.getenv("POSTGRES_DB", "pipeline")
+postgres_user = os.getenv("POSTGRES_USER", "postgres")
+postgres_password = os.getenv("POSTGRES_PASSWORD", "postgres")
+
 input_path = f"{BASE}/data/bronze/retails_raw"
 output_path = f"{BASE}/data/silver/retails_clean"
 SALT = os.getenv("PII_HASH_SALT", "secret")
@@ -15,8 +20,8 @@ def main() -> None:
         normalized_df = spark.read.parquet(input_path)
         cleaned_df = normalized_df
 
-        cleaned_df = (cleaned_df
-
+        cleaned_df = (
+            cleaned_df
             # Rename columns to snake_case
             .withColumnsRenamed({
                 "InvoiceNo": "invoice_no",
@@ -51,7 +56,7 @@ def main() -> None:
                 F.col("invoice_date").isNotNull() &
                 F.col("unit_price").isNotNull() &
                 F.col("customer_id").isNotNull() &
-                F.col("country").isNotNull()
+                F.col("country").isNotNull() &
 
             # Filter out invalid and test values
                 (F.col("quantity") > 0) &
@@ -68,8 +73,9 @@ def main() -> None:
             # Calculate revenue
             .withColumn("revenue", F.round(F.col("quantity")* F.col("unit_price"), 2))
         
-            # Add sale date
+            # Add sale date and month
             .withColumn("sale_date", F.to_date(F.col("invoice_date")))
+            .withColumn("sale_month", F.date_trunc("month", F.col("invoice_date")))
 
             # Select final columns
             .select(
@@ -79,6 +85,7 @@ def main() -> None:
                 "quantity",
                 "invoice_date",
                 "sale_date",
+                "sale_month",
                 "unit_price",
                 "customer_id_hash",
                 "country",
@@ -88,7 +95,15 @@ def main() -> None:
 
         # Write output
         cleaned_df.write.format("parquet").mode("overwrite").save(output_path)
-
+        (
+            cleaned_df.write.format("jdbc").mode("overwrite")
+            .option("url", f"jdbc:postgresql://{postgres_host}:5432/{postgres_db}")
+            .option("dbtable", "public.sales_clean")
+            .option("user", postgres_user)
+            .option("password", postgres_password)
+            .option("driver", "org.postgresql.Driver")
+            .save()
+        )
         # Log
         row_count = cleaned_df.count()
         print(f"🚀 [transform] Transformed {row_count} rows into {output_path}")

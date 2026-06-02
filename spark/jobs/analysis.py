@@ -27,7 +27,7 @@ def main() -> None:
             cleaned_df
             .groupBy("stock_code")
             .agg(
-                F.first("description", ignorenulls=True).alias("description"),
+                F.max("description", ignorenulls=True).alias("description"),
                 F.sum("quantity").alias("total_quantity"),
                 F.round(F.sum("revenue"), 2).alias("total_revenue"),
             )
