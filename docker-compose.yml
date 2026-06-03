@@ -8,6 +8,9 @@ x-airflow-common: &airflow-common
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW_CONN_SPARK_DEFAULT: spark://spark-master:7077
+    _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-apache-spark==4.8.1 pyspark==3.5.1
+
   volumes:
     - ./airflow/dags:/opt/airflow/dags:z
     - ./airflow/logs:/opt/airflow/logs:z
@@ -80,5 +83,16 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: pipeline-airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      spark-worker:
+        condition: service_started
+        
 volumes:
   postgres_data:
