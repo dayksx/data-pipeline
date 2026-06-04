@@ -10,7 +10,7 @@ SPARK_PACKAGES = "org.postgresql:postgresql:42.7.3"
 with DAG(
     dag_id="sales_medallion_pipeline",
     start_date=datetime(2026, 6, 1),
-    schedule=None,
+    schedule="@daily",
     catchup=False,
     tags=["retails", "spark", "medallion"],
 ) as dag: 
