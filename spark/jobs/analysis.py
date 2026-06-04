@@ -3,7 +3,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 BASE = os.getenv("PIPELINE_ROOT", "/opt/pipeline")
-postgres_host = os.getenv("POSTGRES_HOST", "localhost")
+postgres_host = os.getenv("POSTGRES_HOST", "postgres")
 postgres_db = os.getenv("POSTGRES_DB", "pipeline")
 postgres_user = os.getenv("POSTGRES_USER", "postgres")
 postgres_password = os.getenv("POSTGRES_PASSWORD", "postgres")

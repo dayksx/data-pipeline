@@ -8,7 +8,7 @@ SPARK_PACKAGES = "org.postgresql:postgresql:42.7.3"
 
 
 with DAG(
-    dag_id="medallion_pipeline",
+    dag_id="sales_medallion_pipeline",
     start_date=datetime(2026, 6, 1),
     schedule=None,
     catchup=False,
@@ -29,5 +29,13 @@ with DAG(
         verbose=True,
         packages=SPARK_PACKAGES,
     )
+    analysis = SparkSubmitOperator(
+        task_id="analyze_sales_data",
+        name="analyze-sales-data",
+        application=f"{BASE}/spark/jobs/analysis.py",
+        conn_id="spark_default",
+        verbose=True,
+        packages=SPARK_PACKAGES,
+    )
 
-    ingest >> transform
+    ingest >> transform >> analysis

@@ -12,7 +12,6 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type":"spark","host":"spark://spark-master:7077"}'
-    _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-apache-spark==4.8.1 pyspark==3.5.1
 
   volumes:
     - ./airflow/dags:/opt/airflow/dags:z
