@@ -4,42 +4,45 @@ End-to-end data pipeline using **PostgreSQL**, a **Spark** standalone cluster, a
 
 ## Architecture
 
-### Logical data model
+The views in [`docs/`](docs/) are drawn with **[ArchiMate](https://www.opengroup.org/archimate)** (The Open Group Architecture Framework modeling language): a **business** view of the retail domain and a **structure** view of how the pipeline is implemented.
 
-The source data follows a retail sales model: customers place transactions (invoices), and each transaction contains one or more product lines.
+### Business object view
 
-![Logical data model](docs/image.png)
+Customers place transactions (invoices); each transaction has one or more product lines. The ArchiMate business-object view captures that domain model.
 
-| Entity | Attributes in the diagram | How it appears in `retails.csv` |
-|--------|---------------------------|----------------------------------|
-| **Customer** | `CustomerId`, `Country` | `CustomerID`, `Country` on each row |
-| **Transaction** | `InvoiceNo`, `InvoiceDate` | `InvoiceNo`, `InvoiceDate` on each row |
-| **Product** | `StockCode`, `Description`, `Unit price` | `StockCode`, `Description`, `UnitPrice` on each row |
-| **Transaction_Product** | `Quantity`, `Unit price`, `Revenue` | `Quantity`, `UnitPrice`, `Revenue` on each row |
+<img src="docs/business-object-view.png" alt="Business object view" width="420" />
 
-**Is this diagram correct?** Yes, as a **logical model** for the Online Retail dataset. The CSV is a **denormalized export**: one row equals one **Transaction_Product** line, with customer, invoice, and product attributes repeated on the same row. The pipeline does not create four separate PostgreSQL tables; after cleaning, everything is stored at line-item level in `public.sales_clean` (silver layer), which matches the associative entity in the diagram.
+| Business object | Attributes in the diagram | Columns in `retails.csv` |
+|-----------------|---------------------------|---------------------------|
+| **Customer** | `CustomerId`, `Country` | `CustomerID`, `Country` |
+| **Transaction** | `InvoiceNo`, `InvoiceDate` | `InvoiceNo`, `InvoiceDate` |
+| **Product** | `StockCode`, `Description`, `Unit price` | `StockCode`, `Description`, `UnitPrice` |
+| **Transaction_Product** | `Quantity`, `Unit price`, `Revenue` | `Quantity`, `UnitPrice`, `Revenue` |
 
-**Cardinality in the diagram:**
-- A customer can initiate zero or many transactions (`0..*`).
-- A transaction contains one or many product lines (`1..*`).
-- A product can appear on zero or many transaction lines (`0..*`).
+The source file is a **denormalized export**: one row is one **Transaction_Product** line, with customer, invoice, and product attributes repeated. The pipeline does not materialize four separate PostgreSQL tables; after cleaning, data lives at line-item grain in `public.sales_clean` (silver), which aligns with the associative object in the diagram.
 
-This matches the exercise data: many lines per invoice, many products, and many customers.
+**Relationships (cardinality):**
+- Customer → Transaction: `0..*` (a customer may have zero or many invoices).
+- Transaction → Transaction_Product: `1..*` (each invoice has at least one line).
+- Product → Transaction_Product: `0..*` (a product may appear on many lines).
 
-### Technical stack
+### Data pipeline structure view
 
-```text
-retails.csv  →  ingest (bronze)  →  transform (silver + sales_clean)
-                                              ↓
-                                    analysis (gold + Postgres tables)
-                                              ↓
-                              postgres/queries/analysis.sql (SQL)
+End-to-end flow from source file to analytics, orchestrated on a Docker Compose stack (PostgreSQL, Spark standalone cluster, Airflow).
 
-Orchestration (optional): Airflow DAG → Spark jobs on standalone cluster
-Infrastructure: Docker Compose (Postgres, Spark master/worker, Airflow)
-```
+<img src="docs/data-pipeline-structure-view.png" alt="Data pipeline structure view" width="960" />
 
-More detail on Spark jobs: [`spark/README.md`](spark/README.md).
+| Layer / component | Role |
+|-------------------|------|
+| **Source** | `data/retails.csv` (Online Retail line items) |
+| **Bronze** | `spark/jobs/ingest.py` → `data/bronze/retails_raw/` (raw Parquet, minimal change) |
+| **Silver** | `spark/jobs/transform.py` → `data/silver/retails_clean/` and `public.sales_clean` (cleaned, PII-hashed) |
+| **Gold** | `spark/jobs/analysis.py` → `data/gold/retails_analysis/` and Postgres tables (`total_revenue`, `top_products`, `monthly_sales`, `monthly_stats`) |
+| **SQL analysis** | `postgres/queries/analysis.sql` on `sales_clean` (complementary to PySpark gold outputs) |
+| **Orchestration** | Airflow DAG `sales_medallion_pipeline` (`airflow/dags/medallion_pipeline.py`): ingest → transform → analysis via `SparkSubmitOperator` |
+| **Runtime** | Docker Compose: Postgres, Spark master/worker, Airflow webserver and scheduler |
+
+**Required job order:** ingest → transform → analysis. Spark job details: [`spark/README.md`](spark/README.md).
 
 ## Prerequisites
 
