@@ -3,6 +3,9 @@ x-airflow-common: &airflow-common
   build:
     context: ./airflow
     dockerfile: Dockerfile
+  # Fedora/RHEL SELinux: bind mounts need this or `chcon` on airflow/dags and airflow/logs
+  security_opt:
+    - label:disable
   environment:
     AIRFLOW_UID: "50000"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
