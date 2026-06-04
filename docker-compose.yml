@@ -16,7 +16,8 @@ x-airflow-common: &airflow-common
     - ./airflow/logs:/opt/airflow/logs:z
     - ./:/opt/pipeline:z
   depends_on:
-    - postgres
+    postgres:
+      condition: service_healthy
 
 services:
   postgres:
@@ -31,6 +32,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   spark-master:
     image: bitnamilegacy/spark:3.5.1
@@ -57,19 +64,21 @@ services:
   airflow-init:
     <<: *airflow-common
     container_name: pipeline-airflow-init
+    user: "0:0"
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        set -e
-        airflow db migrate
-        airflow users create \
+        mkdir -p /opt/airflow/logs /opt/airflow/plugins
+        chown -R "$${AIRFLOW_UID}:0" /opt/airflow/logs
+        su -s /bin/bash airflow -c "airflow db migrate"
+        su -s /bin/bash airflow -c "airflow users create \
           --username admin \
           --password admin \
           --firstname Admin \
           --lastname User \
           --role Admin \
-          --email admin@example.com || true
+          --email admin@example.com" || true
     restart: "no"
 
   airflow-webserver:
