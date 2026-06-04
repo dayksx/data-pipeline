@@ -1,1 +1,3 @@
 pyspark==3.5.1
+# Local IDE / type-checking only — Airflow runs in Docker (Python 3.11).
+apache-airflow-providers-apache-spark==4.8.1
