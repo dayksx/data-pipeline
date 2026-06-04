@@ -1,4 +1,6 @@
-# End-to-End Data Pipeline Implementation: Online Retail Case
+# End-to-End Data Pipeline Implementation
+
+**Online Retail Case**
 
 Medallion pipeline (bronze → silver → gold) with **PostgreSQL**, **Spark**, and **Airflow** on Docker Compose. Source dataset: `data/retails.csv`.
 
