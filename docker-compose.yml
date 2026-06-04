@@ -44,6 +44,8 @@ services:
   spark-master:
     image: bitnamilegacy/spark:3.5.1
     container_name: pipeline-spark-master
+    # Same uid as Airflow (AIRFLOW_UID) so Parquet overwrite works from both paths
+    user: "50000:0"
     environment:
       - SPARK_MODE=master
     ports:
@@ -55,6 +57,7 @@ services:
   spark-worker:
     image: bitnamilegacy/spark:3.5.1
     container_name: pipeline-spark-worker
+    user: "50000:0"
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077

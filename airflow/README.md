@@ -64,3 +64,12 @@ airflow/
 3. Enable **`sales_medallion_pipeline`**, then **Trigger DAG** (or wait for `@daily`).
 
 Task logs: Airflow UI → DAG → task instance → Log, or files under `airflow/logs/`.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `up_for_retry` on `ingest_retails_csv` | Real Spark failure, then Airflow retries (expected) | Open task **Log**; see error at the bottom |
+| `Unable to clear output directory` | Parquet under `data/` owned by another uid (often 1001 from older Spark images) | Reset: `docker exec -u root pipeline-spark-master rm -rf /opt/pipeline/data/bronze /opt/pipeline/data/silver /opt/pipeline/data/gold`, then **Clear** + **Trigger**. Spark and Airflow both use uid **50000** (`docker-compose.yml`) |
+
+`up_for_retry` with a 5-minute wait is normal after a failure — not a freeze. The task will retry up to 2 times, then turn **failed** if the underlying error persists.

@@ -1,10 +1,20 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
 BASE = os.getenv("PIPELINE_ROOT", "/opt/pipeline")
 SPARK_PACKAGES = "org.postgresql:postgresql:42.7.3"
+
+# Transient failures (Spark master not ready, JDBC timeout) are retried automatically.
+# Downstream tasks do not run until upstream succeeds (task chain below).
+default_args = {
+    "owner": "pipeline",
+    "retries": 2,
+    "retry_delay": timedelta(minutes=5),
+    "depends_on_past": False,
+}
 
 
 with DAG(
@@ -12,6 +22,8 @@ with DAG(
     start_date=datetime(2026, 6, 1),
     schedule="@daily",
     catchup=False,
+    default_args=default_args,
+    max_active_runs=1,
     tags=["retails", "spark", "medallion"],
 ) as dag: 
     ingest = SparkSubmitOperator(
