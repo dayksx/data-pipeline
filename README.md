@@ -165,19 +165,18 @@ docker exec -it pipeline-postgres psql -U postgres -d pipeline -c \
 
 Note: `sale_month` is stored as a timestamp by Spark. `TO_CHAR` is used here for readable output only.
 
-**Insights** (based on cleaned data from Jan 2010 to Dec 2011, consistent with `analysis.py`):
+**Insights** (cleaned data, Jan 2010–Dec 2011 — same window as `analysis.py`):
 
 **Patterns**
-- The time series shows **two distinct phases**: low revenue in **Jan–Nov 2010** (approximately £4k–£17k per month, few invoices), followed by a **stable high-volume phase** from **Dec 2010** onward (approximately £840k–£980k per month, around 100 invoices per month).
-- Throughout **2011**, monthly revenue remains within a **narrow range** with stable invoice counts, consistent with **recurring B2B wholesale** activity rather than strong retail seasonality.
-- Revenue **increases gradually during 2011**, reaching a peak in **August 2011** (approximately £981k), followed by moderate fluctuations until the end of the dataset.
-- In peak months, approximately **100 invoices** account for roughly **35,000 line items** (about 350 lines per invoice), which is typical of B2B order patterns.
+- **Two phases:** tiny revenue through most of 2010 (£4k–£17k, few invoices), then ~£848k from December onward.
+- **Wholesale rhythm:** steady state is roughly £840k–£980k/month with ~100 invoices — big baskets (~350 lines each), not retail seasonality.
+- **2011 peak:** inches up and tops out around £981k in August; nothing dramatic after that.
 
 **Anomalies**
-- **December 2010** shows a major step change: revenue increases from approximately **£6k (November)** to **£848k (December)** (roughly 140×), with invoice volume rising from single digits to about 100. Early 2010 should be treated as a **ramp-up period**, not comparable to 2011 operating levels.
-- **December 2011** appears weak (approximately £252k), but the source file **ends on 11 December 2011**. This month is **incomplete** and should not be interpreted as a business decline.
-- **May 2010** records the lowest monthly revenue (approximately £4.4k, 5 invoices), likely due to **limited data coverage** at the beginning of the extract.
-- The **standard deviation** is close to the **mean** monthly revenue because of early low values and the December 2010 discontinuity. The **median** (approximately £547k) better represents a typical month once the ramp-up period is excluded.
+- **Dec 2010 step change:** ~140× jump from November (£6k → £848k). I'd treat Jan–Nov 2010 as ramp-up, not a normal baseline.
+- **Incomplete Dec 2011:** only looks weak (~£252k) because the file stops on the 11th — partial month.
+- **May 2010 low:** floor at £4.4k (5 invoices), probably sparse data at the start of the extract.
+- **Mean vs median:** mean and std dev sit close together because of early low months and the December jump. Median (~£547k) is a more honest typical month once you ignore the ramp-up.
 
 **Summary statistics** (also available in `public.monthly_stats` and in the analysis job logs):
 
@@ -186,7 +185,7 @@ docker exec -it pipeline-postgres psql -U postgres -d pipeline -c \
   "SELECT * FROM public.monthly_stats;"
 ```
 
-Reference values: total cleaned revenue approximately **£10.98M** over **24 months**; peak month **August 2011**; lowest month **May 2010**.
+Rough totals: ~£10.98M over 24 months; peak Aug 2011, low May 2010.
 
 **Expected output directories on the host:**
 
