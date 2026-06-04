@@ -212,11 +212,13 @@ Reference values: total cleaned revenue approximately **£10.98M** over **24 mon
 
 ## 5. Airflow (orchestration)
 
-After completing step 1, the Airflow UI is available. To schedule **ingest → transform**, add a DAG under `airflow/dags/` (for example `etl_pipeline.py` using `SparkSubmitOperator` with the same job paths and Spark/Postgres configuration as in step 2). Then:
+After completing step 1, the Airflow UI is available. The pipeline is orchestrated by DAG **`sales_medallion_pipeline`** in [`airflow/dags/medallion_pipeline.py`](airflow/dags/medallion_pipeline.py). It runs **ingest → transform → analysis** on a `@daily` schedule using `SparkSubmitOperator` (same Spark jobs and JDBC packages as in step 2). See [`airflow/README.md`](airflow/README.md) for DAG details.
 
 1. Open http://localhost:8088 and sign in with `admin` / `admin`.
-2. Enable the DAG.
-3. Use **Trigger DAG** for a manual execution, or wait for the `@daily` schedule.
+2. Enable **`sales_medallion_pipeline`**.
+3. Use **Trigger DAG** for a manual run, or wait for the `@daily` schedule.
+
+**SQL analysis** (`postgres/queries/analysis.sql`) is not part of the DAG: run it manually after `transform` has populated `sales_clean` (step 3).
 
 The scheduler is already configured to depend on Spark and Postgres. No additional initialization is required beyond `docker compose up -d`.
 
