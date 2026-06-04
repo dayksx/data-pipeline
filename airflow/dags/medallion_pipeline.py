@@ -1,4 +1,8 @@
+import os
 from datetime import datetime
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+
+BASE = os.getenv("PIPELINE_ROOT", "/opt/pipeline")
 
 from airflow import DAG
 
@@ -9,4 +13,10 @@ with DAG(
     catchup=False,
     tags=["retails", "spark", "medallion"],
 ) as dag: 
-    pass
+    ingest = SparkSubmitOperator(
+        task_id="ingest_retails_csv",
+        application=f"{BASE}/spark/jobs/ingest.py",
+        conn_id="spark_default",
+        verbose=True,
+
+    )
