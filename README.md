@@ -1,6 +1,6 @@
-# Online Retail Data Pipeline
+# End-to-End Data Pipeline Implementation: Online Retail Case
 
-End-to-end data pipeline using **PostgreSQL**, a **Spark** standalone cluster, and **Airflow**, deployed with Docker Compose. Source dataset: `data/retails.csv`.
+Medallion pipeline (bronze → silver → gold) with **PostgreSQL**, **Spark**, and **Airflow** on Docker Compose. Source dataset: `data/retails.csv`.
 
 ## Architecture
 
