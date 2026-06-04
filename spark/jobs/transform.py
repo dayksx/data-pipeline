@@ -64,11 +64,11 @@ def main() -> None:
                 (F.lower(F.trim(F.col("country"))) != "utopia")
             )
 
+            # Drop duplicates
+            .dropDuplicates(["customer_id", "invoice_no", "stock_code", "invoice_date", "quantity"])
+            
             # Anonymized Customer ID
             .withColumn("customer_id_hash", F.sha2(F.concat(F.col("customer_id"), F.lit(SALT)), 256))
-
-            # Drop duplicates
-            .dropDuplicates(["invoice_no", "stock_code", "invoice_date", "quantity"])
             
             # Calculate revenue
             .withColumn("revenue", F.round(F.col("quantity")* F.col("unit_price"), 2))

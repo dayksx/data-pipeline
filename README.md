@@ -97,14 +97,6 @@ docker exec pipeline-spark-master spark-submit \
   --master spark://spark-master:7077 \
   --name transform-clean-data \
   --packages org.postgresql:postgresql:42.7.3 \
-  --conf spark.driverEnv.POSTGRES_HOST=postgres \
-  --conf spark.driverEnv.POSTGRES_DB=pipeline \
-  --conf spark.driverEnv.POSTGRES_USER=postgres \
-  --conf spark.driverEnv.POSTGRES_PASSWORD=postgres \
-  --conf spark.executorEnv.POSTGRES_HOST=postgres \
-  --conf spark.executorEnv.POSTGRES_DB=pipeline \
-  --conf spark.executorEnv.POSTGRES_USER=postgres \
-  --conf spark.executorEnv.POSTGRES_PASSWORD=postgres \
   /opt/pipeline/spark/jobs/transform.py
 ```
 
@@ -115,14 +107,6 @@ docker exec pipeline-spark-master spark-submit \
   --master spark://spark-master:7077 \
   --name analysis-retails \
   --packages org.postgresql:postgresql:42.7.3 \
-  --conf spark.driverEnv.POSTGRES_HOST=postgres \
-  --conf spark.driverEnv.POSTGRES_DB=pipeline \
-  --conf spark.driverEnv.POSTGRES_USER=postgres \
-  --conf spark.driverEnv.POSTGRES_PASSWORD=postgres \
-  --conf spark.executorEnv.POSTGRES_HOST=postgres \
-  --conf spark.executorEnv.POSTGRES_DB=pipeline \
-  --conf spark.executorEnv.POSTGRES_USER=postgres \
-  --conf spark.executorEnv.POSTGRES_PASSWORD=postgres \
   /opt/pipeline/spark/jobs/analysis.py
 ```
 
@@ -237,7 +221,7 @@ Then repeat from **step 1**. The `airflow-init` service will run again on the ne
 | Issue | Resolution |
 |-------|------------|
 | `ClassNotFoundException: org.postgresql.Driver` | Include `--packages org.postgresql:postgresql:42.7.3` for transform and analysis jobs |
-| JDBC connection refused from Spark | Set host to `postgres` (not `localhost`) using `spark.driverEnv` and `spark.executorEnv` |
+| JDBC connection refused from Spark | Run jobs inside Docker (`pipeline-spark-master`); jobs default to `POSTGRES_HOST=postgres`. Override only if you run Spark outside Compose |
 | Permission errors on `airflow/logs` (SELinux) | Volume mounts use the `:z` flag; ensure the directory exists: `mkdir -p airflow/logs` |
 | `airflow-init` already completed | Expected on restart; the admin user is recreated only after `docker compose down -v` |
 | Task `up_for_retry` / `Unable to clear output directory` | Parquet owned by another uid (e.g. old Spark runs as 1001). Reset: `docker exec -u root pipeline-spark-master rm -rf /opt/pipeline/data/bronze /opt/pipeline/data/silver /opt/pipeline/data/gold`, then **Clear** + **Trigger DAG**. Spark containers use `user: "50000:0"` to match Airflow |
