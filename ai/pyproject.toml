@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "insights-agent"
+version = "0.1.0"
+description = "LangGraph insights agent over the retail pipeline warehouse"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.7",
+  "pydantic-settings>=2.2",
+  "pyyaml>=6.0",
+  "psycopg[binary]>=3.1",
+  "sqlglot>=25.0",
+  "langgraph>=0.2",
+  "langchain-openai>=0.2",
+  "langchain-core>=0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+insights = "insights_agent.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,51 @@
+# Predefined gold KPIs — SQL must match spark/jobs/analysis.py outputs.
+# Used by run_gold_query(metric_id). Static file; update if analysis.py changes.
+
+metrics:
+  total_revenue:
+    description: Total revenue across all cleaned line items in the dataset.
+    table: total_revenue
+    sql: "SELECT total_revenue FROM public.total_revenue"
+    aliases:
+      - total revenue
+      - how much did we sell
+      - overall revenue
+      - what is the total revenue
+
+  top_products_by_quantity:
+    description: Top 10 products by total quantity sold (stock_code grain).
+    table: top_products
+    sql: |
+      SELECT stock_code, description, total_quantity, total_revenue
+      FROM public.top_products
+      ORDER BY total_quantity DESC, total_revenue DESC
+      LIMIT 10
+    aliases:
+      - top 10 products
+      - top products by quantity
+      - bestsellers
+      - most popular products
+      - best selling products
+
+  monthly_revenue_trend:
+    description: Monthly revenue, invoice count, and items sold ordered by month.
+    table: monthly_sales
+    sql: |
+      SELECT sale_month, invoices_count, revenue, items_sold
+      FROM public.monthly_sales
+      ORDER BY sale_month ASC
+    aliases:
+      - monthly revenue
+      - monthly revenue trend
+      - revenue by month
+      - monthly sales trend
+
+  monthly_revenue_summary:
+    description: Aggregate statistics over monthly revenue (avg, median, peak, low, stddev).
+    table: monthly_stats
+    sql: "SELECT * FROM public.monthly_stats"
+    aliases:
+      - monthly stats
+      - monthly revenue statistics
+      - average monthly revenue
+      - revenue summary statistics

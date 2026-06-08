@@ -1,0 +1,145 @@
+# Semantic layer — dataset contract for the insights agent.
+# Static file: align with spark/jobs/transform.py and analysis.py when the pipeline changes.
+
+dataset: online_retail
+description: UK B2B online retail line items after medallion cleaning (silver + gold in PostgreSQL).
+grain: one row per invoice line item (product line on one invoice)
+currency: GBP
+
+time_range:
+  start: "2010-01-12"
+  end: "2011-12-11"
+  note: Extract ends on 11 Dec 2011 — December 2011 is a partial month in the source file.
+
+pipeline:
+  source: data/retails.csv
+  silver_table: public.sales_clean
+  silver_job: spark/jobs/transform.py
+  gold_job: spark/jobs/analysis.py
+
+cleaning_rules_applied:
+  - InvoiceNo starting with C (cancellations) removed
+  - Nulls dropped on key columns
+  - quantity > 0, unit_price >= 0
+  - Test country Utopia excluded
+  - Duplicates removed on customer_id_hash, invoice_no, stock_code, invoice_date, quantity
+  - Raw CustomerID dropped at transform; only customer_id_hash is stored in sales_clean
+  - revenue recomputed as round(quantity * unit_price, 2)
+
+tables:
+  sales_clean:
+    layer: silver
+    description: Cleaned line-item fact table — use for ad-hoc SQL analytics.
+    columns:
+      - name: invoice_no
+        type: string
+        description: Invoice identifier; cancellations already excluded.
+      - name: stock_code
+        type: string
+        description: Product SKU.
+      - name: description
+        type: string
+        description: Product label (first value per stock_code in aggregates).
+      - name: quantity
+        type: double
+        description: Units sold on the line; always positive after cleaning.
+      - name: invoice_date
+        type: timestamp
+        description: Transaction timestamp (UTC in Spark jobs).
+      - name: sale_date
+        type: date
+        description: Date part of invoice_date; use for daily filters.
+      - name: sale_month
+        type: timestamp
+        description: Month bucket (date_trunc month, UTC); use for monthly trends and GROUP BY.
+      - name: unit_price
+        type: double
+        description: Unit price in GBP.
+      - name: customer_id_hash
+        type: string
+        description: Anonymized customer id (SHA-256). Column customer_id does not exist — use this only.
+      - name: country
+        type: string
+        description: Customer country (e.g. United Kingdom, Germany, France).
+      - name: revenue
+        type: double
+        description: Line revenue = quantity * unit_price, rounded to 2 decimals.
+
+  total_revenue:
+    layer: gold
+    description: Single-row aggregate — total revenue over all cleaned line items.
+    columns:
+      - name: total_revenue
+        type: double
+        description: Sum of revenue from sales_clean.
+
+  top_products:
+    layer: gold
+    description: Top 10 products by quantity sold (exercise KPI).
+    columns:
+      - name: stock_code
+        type: string
+      - name: description
+        type: string
+      - name: total_quantity
+        type: double
+        description: Sum of quantity across all lines for the SKU.
+      - name: total_revenue
+        type: double
+        description: Sum of line revenue for the SKU.
+
+  monthly_sales:
+    layer: gold
+    description: Monthly revenue trend — one row per calendar month.
+    columns:
+      - name: sale_month
+        type: timestamp
+        description: First day of month (timestamp); order by this for trends.
+      - name: invoices_count
+        type: long
+        description: Distinct invoice_no count in the month.
+      - name: revenue
+        type: double
+        description: Total revenue in the month.
+      - name: items_sold
+        type: double
+        description: Sum of quantity in the month.
+
+  monthly_stats:
+    layer: gold
+    description: Summary statistics over monthly_sales.revenue (one row).
+    columns:
+      - name: avg_monthly_revenue
+        type: double
+      - name: median_monthly_revenue
+        type: double
+      - name: peak_monthly_revenue
+        type: double
+      - name: lowest_monthly_revenue
+        type: double
+      - name: standard_deviation_monthly_revenue
+        type: double
+
+known_anomalies:
+  - id: dec_2010_step_change
+    summary: Revenue jumps from ~£6k (Nov 2010) to ~£848k (Dec 2010). Treat Jan–Nov 2010 as ramp-up, not a normal baseline.
+  - id: partial_dec_2011
+    summary: December 2011 revenue looks low (~£252k) because the extract stops on 2011-12-11 — incomplete month.
+  - id: may_2010_low
+    summary: May 2010 is the weakest full-ish month (~£4.4k, few invoices) at the start of the dataset.
+  - id: b2b_basket_size
+    summary: Many lines per invoice (~90+ on average) — B2B/wholesale ordering, not typical B2C carts.
+
+agent_hints:
+  prefer_gold_for:
+    - total revenue
+    - top 10 products by quantity
+    - monthly revenue trend
+  use_sales_clean_for:
+    - breakdowns by country, product, or custom date filters
+    - rankings not precomputed in gold tables
+  sql_dialect: PostgreSQL
+  schema: public
+  sql_notes:
+    - Always call get_semantic_layer before run_sql_readonly for ad-hoc SQL
+    - sales_clean.customer_id does not exist; use customer_id_hash

@@ -1,6 +1,16 @@
 .venv/
+**/.venv/
 **/__pycache__/
 .env
+**/.env
+*.egg-info/
+**/*.egg-info/
+
+# AI insights agent (explicit)
+ai/.env
+ai/.venv/
+ai/src/insights_agent.egg-info/
+
 data/bronze/
 data/silver/
 data/gold/
