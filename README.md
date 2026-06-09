@@ -4,7 +4,7 @@
 
 Medallion pipeline (bronze → silver → gold) with **PostgreSQL**, **Spark**, and **Airflow** on Docker Compose. Source dataset: `data/retails.csv`.
 
-**Bonus — AI insights agent:** the [`ai/`](ai/) directory adds an optional LangGraph agent for natural-language questions over the warehouse (`sales_clean` and gold tables), with a YAML semantic layer and read-only SQL tools. See [`ai/README.md`](ai/README.md) for full setup. Quick start once the pipeline has run and Postgres is up:
+**Bonus — AI insights agent:** the [`ai/`](ai/) directory adds an optional LangGraph agent for natural-language questions over the warehouse (`sales_clean` and gold tables), with a YAML semantic layer, read-only SQL tools, and an optional **RAG** layer backed by **pgvector** in the same Postgres instance (`public.rag_chunks`). See [`ai/README.md`](ai/README.md) and [`ai/rag/README.md`](ai/rag/README.md). Quick start once the pipeline has run and Postgres is up:
 
 ```bash
 cd ai
@@ -53,7 +53,8 @@ End-to-end flow from source file to analytics, orchestrated on a Docker Compose 
 | **Gold** | `spark/jobs/analysis.py` → `data/gold/retails_analysis/` and Postgres tables (`total_revenue`, `top_products`, `monthly_sales`, `monthly_stats`) |
 | **SQL analysis** | `postgres/queries/analysis.sql` on `sales_clean` (complementary to PySpark gold outputs) |
 | **Orchestration** | Airflow DAG `sales_medallion_pipeline` (`airflow/dags/medallion_pipeline.py`): ingest → transform → analysis via `SparkSubmitOperator` |
-| **Runtime** | Docker Compose: Postgres, Spark master/worker, Airflow webserver and scheduler |
+| **Vector store (RAG)** | `postgres/init/create_pgvector_db.sql` → extension `vector` + `public.rag_chunks` (analysis reports indexed by the insights agent) |
+| **Runtime** | Docker Compose: Postgres (`pgvector/pgvector:pg16`), Spark master/worker, Airflow webserver and scheduler |
 
 **Required job order:** ingest → transform → analysis. Spark job details: [`spark/README.md`](spark/README.md).
 
@@ -74,7 +75,9 @@ docker compose up -d
 
 **On the first run:**
 
-- **Postgres** executes scripts in `postgres/init/` (including creation of the `airflow` metadata database).
+- **Postgres** (`pgvector/pgvector:pg16`) executes scripts in `postgres/init/`:
+  - `create_airflow_db.sql` — Airflow metadata database
+  - `create_pgvector_db.sql` — `vector` extension and `public.rag_chunks` table for the RAG layer
 - **`airflow-init`** runs once (`airflow db migrate` and admin user creation), then exits.
 - The other services remain active: Postgres, Spark master and worker, Airflow webserver and scheduler.
 
@@ -88,7 +91,7 @@ docker compose ps
 |---------|----------------|
 | Airflow UI | http://localhost:8088 (`admin` / `admin`) |
 | Spark UI | http://localhost:8080 |
-| PostgreSQL | `localhost:5432` (`postgres` / `postgres`, database `pipeline`) |
+| PostgreSQL | `localhost:5432` (`postgres` / `postgres`, database `pipeline`; includes pgvector) |
 
 ## 2. Run the pipeline (Spark)
 
@@ -141,7 +144,24 @@ Execute after `transform` has populated `sales_clean`:
 docker exec -i pipeline-postgres psql -U postgres -d pipeline < postgres/queries/analysis.sql
 ```
 
-## 4. Validate the results
+## 4. Validate Postgres (warehouse + pgvector)
+
+**List business and vector tables:**
+
+```bash
+docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\dt public.*"
+```
+
+You should see medallion tables (`sales_clean`, gold tables) and, from init, `rag_chunks` (empty until `insights index` runs — see [`ai/rag/README.md`](ai/rag/README.md)).
+
+**Verify pgvector:**
+
+```bash
+docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\dx vector"
+docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\d public.rag_chunks"
+```
+
+## 5. Validate the results
 
 **Verify the cleaned dataset** (loaded by `transform.py`):
 
@@ -206,7 +226,7 @@ Rough totals: ~£10.98M over 24 months; peak Aug 2011, low May 2010.
 - `data/silver/retails_clean/`: cleaned Parquet files
 - `data/gold/retails_analysis/`: analytical Parquet outputs
 
-## 5. Airflow (orchestration)
+## 6. Airflow (orchestration)
 
 After completing step 1, the Airflow UI is available. The pipeline is orchestrated by DAG **`sales_medallion_pipeline`** in [`airflow/dags/medallion_pipeline.py`](airflow/dags/medallion_pipeline.py). It runs **ingest → transform → analysis** on a `@daily` schedule using `SparkSubmitOperator` (same Spark jobs and JDBC packages as in step 2). See [`airflow/README.md`](airflow/README.md) for DAG details.
 
@@ -236,4 +256,6 @@ Then repeat from **step 1**. The `airflow-init` service will run again on the ne
 | JDBC connection refused from Spark | Run jobs inside Docker (`pipeline-spark-master`); jobs default to `POSTGRES_HOST=postgres`. Override only if you run Spark outside Compose |
 | Permission errors on `airflow/logs` (SELinux) | Volume mounts use the `:z` flag; ensure the directory exists: `mkdir -p airflow/logs` |
 | `airflow-init` already completed | Expected on restart; the admin user is recreated only after `docker compose down -v` |
+| `extension "vector" is not available` / Postgres unhealthy on first boot | Use `pgvector/pgvector:pg16` in `docker-compose.yml` (not plain `postgres:16`), then `docker compose down -v && docker compose up -d` |
+| `pipeline-postgres` unhealthy after adding `create_pgvector_db.sql` | Init scripts run only on a fresh volume; reset with `docker compose down -v` after fixing the Postgres image |
 | Task `up_for_retry` / `Unable to clear output directory` | Parquet owned by another uid (e.g. old Spark runs as 1001). Reset: `docker exec -u root pipeline-spark-master rm -rf /opt/pipeline/data/bronze /opt/pipeline/data/silver /opt/pipeline/data/gold`, then **Clear** + **Trigger DAG**. Spark containers use `user: "50000:0"` to match Airflow |
