@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ai/semantic/ — sibling of ai/src/
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 SEMANTIC_DIR = Path(__file__).resolve().parents[2] / "semantic"
+RAG_DOCS_DIR = Path(__file__).resolve().parents[2] / "rag" / "docs"
 
 ALLOWED_TABLES = frozenset({
     "sales_clean",
@@ -38,12 +39,21 @@ class Settings(BaseSettings):
     sql_max_rows: int = 500
     sql_timeout_seconds: int = 10
 
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        validation_alias="EMBEDDING_MODEL",
+    )
+    rag_top_k: int = Field(default=4, validation_alias="RAG_TOP_K")
+    rag_docs_dir: Path = RAG_DOCS_DIR
+
     @property
     def postgres_dsn(self) -> str:
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+        
 
 
 @lru_cache

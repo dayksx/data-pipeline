@@ -59,24 +59,40 @@ The table is empty until you run `insights index`.
 ai/rag/
 ├── README.md           # this file
 ├── docs/               # markdown corpus (chunked by ## sections)
-└── (implementation)
-    src/insights_agent/rag/
+└── jobs/               # batch pipeline (like spark/jobs/)
     ├── chunking.py     # docs/ → chunks
-    ├── indexer.py      # embed + upsert rag_chunks
-    └── retriever.py    # similarity search
+    └── index.py        # chunks → embed → rag_chunks (CLI + Airflow entry point)
+
+ai/src/insights_agent/rag/
+└── retriever.py        # runtime: similarity search for the agent tool
 
 postgres/init/
 └── create_pgvector_db.sql
+
+airflow/dags/medallion_pipeline.py
+└── index_rag_docs      # task after analyze_sales_data
 ```
 
 ## Usage
 
-**Index** (after `docker compose up -d` and `LLM_API_KEY` in `ai/.env`):
+### Dev — manual index
+
+After `docker compose up -d` and `LLM_API_KEY` in `ai/.env`:
 
 ```bash
 cd ai && source .venv/bin/activate
+pip install -e ".[dev]"
 insights index
+# or: python rag/jobs/index.py
 ```
+
+### Prod — Airflow
+
+DAG `sales_medallion_pipeline`: `ingest` → `transform` → `analysis` → **`index_rag_docs`**.
+
+Set Airflow Variable `LLM_API_KEY`. Task runs `python /opt/pipeline/ai/rag/jobs/index.py` inside the Compose network (`POSTGRES_HOST=postgres`).
+
+See [`local/RAG-TUTORIAL.md`](../../local/RAG-TUTORIAL.md) Phase 6 for full setup.
 
 **Query** (once `search_analyses` tool is wired in the agent):
 
@@ -102,15 +118,17 @@ docker exec -it pipeline-postgres psql -U postgres -d pipeline -c \
 | Numbers, aggregates, filters | `run_gold_query` / `run_sql_readonly` (SQL) |
 | Why / patterns / anomalies / B2B context | `search_analyses` (RAG) |
 
-## Why `ai/rag/` and not `rag/` at repo root?
+## Batch vs runtime
 
-For this POC (5 markdown files), keeping corpus and agent code under `ai/` avoids extra Docker services and duplicated Python packaging. If the index grows (product descriptions from `sales_clean`, Airflow re-indexing), a top-level `rag/jobs/` batch layer can be split out while `ai/` keeps the runtime retriever.
+| Layer | Path | Trigger |
+|-------|------|---------|
+| **Batch** | `ai/rag/jobs/` | Airflow `index_rag_docs`, or `insights index` in dev |
+| **Runtime** | `insights_agent/rag/retriever.py` | Agent tool `search_analyses` on each question |
 
-See [`local/RAG-TUTORIAL.md`](../../local/RAG-TUTORIAL.md) for step-by-step implementation.
+Same pattern as `spark/jobs/` (batch warehouse) vs insights agent (interactive queries).
 
 ## Next steps
 
-1. Implement `chunking.py`, `indexer.py`, `retriever.py`
-2. Add `search_analyses` tool to `tools.py`
-3. Add `insights index` to CLI
-4. (Optional) Chain `index_rag_docs` after `analysis` in the Airflow DAG
+1. Implement `rag/jobs/chunking.py` and `rag/jobs/index.py`
+2. Implement `insights_agent/rag/retriever.py` + `search_analyses` in `tools.py`
+3. Wire `insights index` CLI and Airflow task `index_rag_docs`
