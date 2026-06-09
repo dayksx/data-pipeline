@@ -7,6 +7,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START
 from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
 
 SYSTEM = """You are a data analyst for the Online Retail pipeline (PostgreSQL).
 Use tools to answer; never invent numbers.
@@ -16,7 +17,6 @@ Use tools to answer; never invent numbers.
 - sales_clean has customer_id_hash only; column customer_id does NOT exist — never use customer_id
 - If run_sql_readonly returns error query_failed, read the message, fix the SQL, and retry once
 Currency: GBP. Data: Jan 2010 – Dec 2011 (Dec 2011 partial)."""
-
 
 
 @lru_cache
@@ -31,20 +31,25 @@ def build_graph():
     tool_node = ToolNode(TOOLS)
 
     def agent(state: AgentState):
-        msgs = [SystemMessage(content=SYSTEM), HumanMessage(content=state["question"])]
+        msgs = [SystemMessage(content=SYSTEM)] + state.get("messages", [])
 
-        msgs = msgs + state.get("messages", [])
         response = llm_with_tools.invoke(msgs)
         return {"messages": [response]}
 
     def answer(state: AgentState):
-        prompt = (
+        messages = state.get("messages", [])
+        used_tools = any(getattr(m, "type", None) == "tool" for m in messages)
+
+        if not used_tools:
+            return {"final_answer": messages[-1].content if messages else "(no answer)"}
+
+        system_prompt = SystemMessage(content=(
             "Summarize the tool results for the user. "
-            "Use only facts from tool output. Mention SQL when present.\n\n"
-            f"Question: {state['question']}\n\n"
-            f"Tool trace:\n{state['messages']}"
-        )
-        resp = llm.invoke([HumanMessage(content=prompt)])
+            "Use only facts from tool output. Mention SQL when relevant."
+            ))
+        
+        resp = llm.invoke([system_prompt, *messages])
+
         return {"final_answer": resp.content}
 
     g = StateGraph(AgentState)
@@ -55,11 +60,16 @@ def build_graph():
     g.add_conditional_edges("agent", tools_condition, {"tools": "tools", "__end__": "answer"})
     g.add_edge("tools", "agent")
     g.add_edge("answer", END)
-    return g.compile()
+    return g.compile(checkpointer=MemorySaver())
 
-def run_question(question: str) -> AgentState:
+def run_question(question: str, thread_id: str) -> AgentState:
     graph = build_graph()
     return graph.invoke(
-        {"question": question, "messages": [], "final_answer": None},
-        config={"recursion_limit": 15},
+        {
+            "messages": [HumanMessage(content=question)], 
+            "final_answer": None},
+        config={
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": 15,
+            },
     )

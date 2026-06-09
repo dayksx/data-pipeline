@@ -1,32 +1,23 @@
 # AI Insights Agent
 
-This directory contains a small LangGraph agent that answers questions about the
-retail data pipeline warehouse in PostgreSQL.
+LangGraph agent that answers natural-language questions about the retail pipeline
+warehouse in PostgreSQL.
 
-The agent does not read raw files directly. It uses a semantic layer and
-read-only SQL tools to query the cleaned and gold tables produced by the Spark
-pipeline.
+The agent does not read raw files directly. It uses a semantic layer (YAML) and
+read-only SQL tools against `sales_clean` and gold tables produced by Spark.
 
 ## What is inside
 
-- `src/insights_agent/` - Python package for the CLI, LangGraph graph, config,
-  semantic loader, and SQL tools.
-- `semantic/` - YAML files that describe the dataset, metrics, tables, and
-  known caveats.
-- `ARCHITECTURE.md` - design notes and the reasoning behind the agent.
-- `TUTORIAL.md` - step-by-step build guide.
-- `pyproject.toml` - package metadata and dependencies.
+- `src/insights_agent/` — CLI, LangGraph graph, config, semantic loader, SQL tools
+- `semantic/` — dataset card and predefined gold KPIs (`metrics.yaml`)
+- `tests/` — pytest guardrails (SQL validation, tools, semantic loader)
+- `pyproject.toml` — package metadata and dependencies
 
 ## Prerequisites
 
-- Python 3.11+
-- The main data pipeline running with PostgreSQL available
-- The warehouse tables created by the Spark jobs:
-  - `sales_clean`
-  - `total_revenue`
-  - `top_products`
-  - `monthly_sales`
-  - `monthly_stats`
+- Python **3.11–3.13** (3.14 is not supported by this package yet)
+- Pipeline running with PostgreSQL available (`POSTGRES_HOST=localhost` when running Python on the host)
+- Warehouse tables from Spark jobs: `sales_clean`, `total_revenue`, `top_products`, `monthly_sales`, `monthly_stats`
 - An LLM API key
 
 ## Setup
@@ -35,52 +26,67 @@ From this directory:
 
 ```bash
 cd ai
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-Create an `.env` file in `ai/`:
+Copy env vars and set your API key:
 
-```env
-LLM_API_KEY=your_api_key_here
-LLM_MODEL=gpt-4o-mini
-
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=pipeline
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
+```bash
+cp .env.example .env
+# edit .env — at minimum LLM_API_KEY
 ```
 
-Adjust the PostgreSQL values if your local setup uses different credentials or
-ports.
+Use `POSTGRES_HOST=localhost` when Postgres runs via Docker Compose on the host.
+Use `POSTGRES_HOST=postgres` only when the agent itself runs inside the Compose network.
+
+After a reboot, activate the venv again in each new terminal (`source .venv/bin/activate`).
+You do not need to re-run `pip install` unless dependencies change.
 
 ## Usage
 
-Ask a question with the `insights` CLI:
+Single question:
 
 ```bash
 insights ask "What is the total revenue?"
 ```
 
-Show the tool calls and SQL used by the agent:
+Show tool calls and SQL:
 
 ```bash
-insights ask "What are the top 10 products by revenue?" --verbose
+insights ask "Top 10 products by quantity" --verbose
 ```
+
+Machine-readable output:
+
+```bash
+insights ask "Monthly revenue trend" --json
+```
+
+Interactive chat (conversation memory within the session):
+
+```bash
+insights chat
+```
+
+Type `exit`, `quit`, or `q` to leave. Chat uses a dedicated LangGraph thread
+(`chat_session`); one-shot `ask` uses `ask_session` so it does not mix with chat history.
 
 ## How it works
 
-1. The CLI sends the user question to the LangGraph workflow.
-2. The LLM decides whether it needs the semantic layer or a SQL query.
-3. SQL is validated so only one read-only query can run against allowed tables.
-4. The final answer is generated from tool results only.
+1. The CLI sends a `HumanMessage` to a LangGraph workflow (`agent` → `tools` → `answer`).
+2. The LLM chooses tools: semantic layer, predefined gold KPIs, or validated read-only SQL.
+3. SQL is parsed and restricted to allowed tables; Postgres errors are returned as JSON so the agent can retry.
+4. With tools, the `answer` node summarizes tool output only; without tools, the agent reply is returned directly.
+5. A `MemorySaver` checkpointer keeps message history per `thread_id` (used by `insights chat`).
 
-This keeps the agent auditable: numbers in the answer should come from SQL
-results, not from model guesses.
+Numbers in answers should come from SQL results, not from model guesses.
 
-## More Detail
+## Tests
 
-Read `ARCHITECTURE.md` for the design overview and `TUTORIAL.md` for a full
-walkthrough of how the agent is built.
+```bash
+cd ai
+source .venv/bin/activate
+pytest -q
+```

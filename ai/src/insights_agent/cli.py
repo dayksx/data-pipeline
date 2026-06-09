@@ -68,11 +68,12 @@ def main() -> None:
 @app.command()
 def ask(
     question: str,
+    thread_id: str = "ask_session",
     verbose: bool = typer.Option(False, "--verbose", "-v"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Ask the agent a question."""
-    state = run_question(question)
+    state = run_question(question, thread_id)
     payload = {
         "question": question,
         "final_answer": state.get("final_answer"),
@@ -85,6 +86,17 @@ def ask(
 
     _print_tool_trace(state.get("messages", []), verbose=verbose)
     console.print(state.get("final_answer") or "(no answer)")
+
+@app.command()
+def chat() -> None:
+    """Interactive chat"""
+    while True:
+        msg = console.input("[bold]You:[/bold] ").strip()
+        if msg.lower() in {"exit", "quit", "q"}:
+            break
+        if not msg:
+            continue
+        ask(msg, thread_id="chat_session", verbose=True, as_json=False)
 
 
 if __name__ == "__main__":
