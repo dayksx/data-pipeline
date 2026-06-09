@@ -49,7 +49,7 @@ docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\dx vector"
 docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\d public.rag_chunks"
 ```
 
-The table is empty until you run `insights index`.
+The table is empty until you run the index job (see **Usage** below).
 
 > **Note:** Plain `postgres:16` does not include the `vector` extension. Use `pgvector/pgvector:pg16` or init will fail and Postgres stays unhealthy.
 
@@ -57,33 +57,39 @@ The table is empty until you run `insights index`.
 
 ```text
 ai/rag/
-├── README.md           # this file
-├── docs/               # markdown corpus (chunked by ## sections)
-└── jobs/               # batch pipeline (like spark/jobs/)
-    ├── chunking.py     # docs/ → chunks
-    └── index.py        # chunks → embed → rag_chunks (CLI + Airflow entry point)
-
-ai/src/insights_agent/rag/
-└── retriever.py        # runtime: similarity search for the agent tool
-
-postgres/init/
-└── create_pgvector_db.sql
-
-airflow/dags/medallion_pipeline.py
-└── index_rag_docs      # task after analyze_sales_data
+├── README.md
+├── docs/               # markdown corpus
+└── jobs/
+    ├── chunking.py     # docs/ → chunks (helper)
+    └── index.py        # batch job: chunks → embed → rag_chunks (+ __main__)
 ```
 
 ## Usage
 
-### Dev — manual index
+### Index (manual)
 
-After `docker compose up -d` and `LLM_API_KEY` in `ai/.env`:
+After `docker compose up -d`, `LLM_API_KEY` in `ai/.env`, and `pip install -e ".[dev]"` from `ai/`:
 
 ```bash
-cd ai && source .venv/bin/activate
-pip install -e ".[dev]"
-insights index
-# or: python rag/jobs/index.py
+cd ai
+source .venv/bin/activate
+python rag/jobs/index.py
+```
+
+Expected output:
+
+```json
+{
+  "indexed": 38,
+  "sources": ["01-tendances-revenus-mensuels.md", "..."]
+}
+```
+
+Verify in Postgres:
+
+```bash
+docker exec -it pipeline-postgres psql -U postgres -d pipeline -c \
+  "SELECT COUNT(*) FROM rag_chunks;"
 ```
 
 ### Prod — Airflow
@@ -118,17 +124,15 @@ docker exec -it pipeline-postgres psql -U postgres -d pipeline -c \
 | Numbers, aggregates, filters | `run_gold_query` / `run_sql_readonly` (SQL) |
 | Why / patterns / anomalies / B2B context | `search_analyses` (RAG) |
 
-## Batch vs runtime
+### Batch vs runtime
 
-| Layer | Path | Trigger |
-|-------|------|---------|
-| **Batch** | `ai/rag/jobs/` | Airflow `index_rag_docs`, or `insights index` in dev |
-| **Runtime** | `insights_agent/rag/retriever.py` | Agent tool `search_analyses` on each question |
-
-Same pattern as `spark/jobs/` (batch warehouse) vs insights agent (interactive queries).
+| Layer | Path | How to run |
+|-------|------|------------|
+| **Batch** | `ai/rag/jobs/index.py` | `python rag/jobs/index.py` or Airflow `index_rag_docs` |
+| **Runtime** (later) | `ai/src/insights_agent/` | `retriever.py` + tool `search_analyses` |
 
 ## Next steps
 
 1. Implement `rag/jobs/chunking.py` and `rag/jobs/index.py`
 2. Implement `insights_agent/rag/retriever.py` + `search_analyses` in `tools.py`
-3. Wire `insights index` CLI and Airflow task `index_rag_docs`
+3. Add Airflow task `index_rag_docs`

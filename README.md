@@ -152,7 +152,7 @@ docker exec -i pipeline-postgres psql -U postgres -d pipeline < postgres/queries
 docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\dt public.*"
 ```
 
-You should see medallion tables (`sales_clean`, gold tables) and, from init, `rag_chunks` (empty until `insights index` runs — see [`ai/rag/README.md`](ai/rag/README.md)).
+You should see medallion tables (`sales_clean`, gold tables) and, from init, `rag_chunks` (empty until `python rag/jobs/index.py` — see [`ai/rag/README.md`](ai/rag/README.md)).
 
 **Verify pgvector:**
 

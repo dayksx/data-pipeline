@@ -84,10 +84,12 @@ Type `exit`, `quit`, or `q` to leave. Chat uses a dedicated LangGraph thread
 
 ### RAG (vector store)
 
-Index the analysis reports into Postgres (`insights index` — see [`rag/README.md`](rag/README.md)):
+Index the analysis reports into Postgres manually (see [`rag/README.md`](rag/README.md)):
 
 ```bash
-insights index
+cd ai && source .venv/bin/activate
+pip install -e ".[dev]"
+python rag/jobs/index.py
 ```
 
 Verify chunks in pgvector:
