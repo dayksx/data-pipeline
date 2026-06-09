@@ -4,6 +4,17 @@
 
 Medallion pipeline (bronze → silver → gold) with **PostgreSQL**, **Spark**, and **Airflow** on Docker Compose. Source dataset: `data/retails.csv`.
 
+**Bonus — AI insights agent:** the [`ai/`](ai/) directory adds an optional LangGraph agent for natural-language questions over the warehouse (`sales_clean` and gold tables), with a YAML semantic layer and read-only SQL tools. See [`ai/README.md`](ai/README.md) for full setup. Quick start once the pipeline has run and Postgres is up:
+
+```bash
+cd ai
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env   # set LLM_API_KEY
+insights ask "What is the total revenue?"
+insights chat          # interactive session with conversation memory
+```
+
 ## Architecture
 
 The views in [`docs/`](docs/) are drawn with **[ArchiMate](https://www.opengroup.org/archimate)** (The Open Group Architecture Framework modeling language): a **business** view of the retail domain and a **structure** view of how the pipeline is implemented.
