@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta
 
 from airflow import DAG
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
 BASE = os.getenv("PIPELINE_ROOT", "/opt/pipeline")
@@ -50,4 +51,10 @@ with DAG(
         packages=SPARK_PACKAGES,
     )
 
-    ingest >> transform >> analysis
+    trigger_rag = TriggerDagRunOperator(
+        task_id="trigger_rag_index",
+        trigger_dag_id="rag_index_pipeline",
+        wait_for_completion=False,
+    )
+
+    ingest >> transform >> analysis >> trigger_rag

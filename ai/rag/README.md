@@ -58,13 +58,41 @@ The table is empty until you run the index job (see **Usage** below).
 ```text
 ai/rag/
 ├── README.md
-├── docs/               # markdown corpus
+├── docs/                    # markdown corpus (5 analysis reports)
+├── .warehouse_state.json    # fingerprint — skip regen if SQL unchanged
 └── jobs/
-    ├── chunking.py     # docs/ → chunks (helper)
-    └── index.py        # batch job: chunks → embed → rag_chunks (+ __main__)
+    ├── chunking.py          # docs/ → chunks (helper)
+    ├── generate_reports.py  # SQL → rewrite docs/ when warehouse changes
+    └── index.py             # batch job: chunks → embed → rag_chunks (+ __main__)
 ```
 
 ## Usage
+
+### Regenerate reports from SQL (daily check)
+
+After Spark `analysis` has loaded gold tables, refresh the markdown corpus if the warehouse changed:
+
+```bash
+cd ai && source .venv/bin/activate
+
+# Check only — no writes
+python rag/jobs/generate_reports.py --check-only
+
+# Regenerate 5 .md files when fingerprint changed
+python rag/jobs/generate_reports.py
+
+# Force rewrite even if SQL unchanged
+python rag/jobs/generate_reports.py --force
+```
+
+Fingerprint uses `sales_clean` row count, total revenue, date range, and gold table counts.  
+If `updated: true`, run `python rag/jobs/index.py` to re-embed.
+
+**Cron example** (daily at 06:00, after Airflow DAG):
+
+```bash
+0 6 * * * cd /path/to/ai && .venv/bin/python rag/jobs/generate_reports.py | grep -q '"updated": true' && .venv/bin/python rag/jobs/index.py
+```
 
 ### Index (manual)
 

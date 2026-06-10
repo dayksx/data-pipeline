@@ -15,3 +15,4 @@ data/bronze/
 data/silver/
 data/gold/
 airflow/logs/
+data/rag/

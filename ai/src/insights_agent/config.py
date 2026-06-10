@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
         validation_alias="EMBEDDING_MODEL",
     )
     rag_top_k: int = Field(default=4, validation_alias="RAG_TOP_K")
-    rag_docs_dir: Path = RAG_DOCS_DIR
+    rag_docs_dir: Path = Field(default=RAG_DOCS_DIR, validation_alias="RAG_DOCS_DIR")
 
     @property
     def postgres_dsn(self) -> str:
@@ -60,4 +60,10 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     # LangChain/LangSmith read os.environ — pydantic alone does not export .env.
     load_dotenv(ENV_FILE, override=False)
-    return Settings()
+    settings = Settings()
+    # Airflow may inject LLM_API_KEY="" when the Variable is unset, which blocks dotenv.
+    if not settings.llm_api_key.strip() and ENV_FILE.exists():
+        file_key = (dotenv_values(ENV_FILE) or {}).get("LLM_API_KEY", "")
+        if file_key:
+            settings = settings.model_copy(update={"llm_api_key": file_key})
+    return settings

@@ -1,1 +1,0 @@
-# TODO: Ingest the documents (notion, confluence, blogs, etc.) into the RAG corpus
