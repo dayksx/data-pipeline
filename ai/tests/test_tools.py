@@ -16,7 +16,7 @@ from insights_agent.tools import (
 
 def test_tools_exported() -> None:
     names = {tool.name for tool in TOOLS}
-    assert names == {"get_semantic_layer", "run_gold_query", "run_sql_readonly"}
+    assert names == {"get_semantic_layer", "run_gold_query", "run_sql_readonly", "search_analyses"}
 
 
 def test_get_semantic_layer_returns_dataset_context() -> None:

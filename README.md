@@ -4,7 +4,7 @@
 
 Medallion pipeline (bronze → silver → gold) with **PostgreSQL**, **Spark**, and **Airflow** on Docker Compose. Source dataset: `data/retails.csv`.
 
-**Bonus — AI insights agent:** the [`ai/`](ai/) directory adds an optional LangGraph agent for natural-language questions over the warehouse (`sales_clean` and gold tables), with a YAML semantic layer and read-only SQL tools. See [`ai/README.md`](ai/README.md) for full setup. Quick start once the pipeline has run and Postgres is up:
+**Bonus — AI insights agent:** the [`ai/`](ai/) directory adds an optional LangGraph agent for natural-language questions over the warehouse (`sales_clean` and gold tables), with a YAML semantic layer, read-only SQL tools, and an optional **RAG** layer backed by **pgvector** in the same Postgres instance (`public.rag_chunks`). Airflow **`rag_index_pipeline`** refreshes reports and re-indexes after each medallion run. See [`ai/README.md`](ai/README.md) and [`ai/rag/README.md`](ai/rag/README.md). Quick start once the pipeline has run and Postgres is up:
 
 ```bash
 cd ai
@@ -52,8 +52,9 @@ End-to-end flow from source file to analytics, orchestrated on a Docker Compose 
 | **Silver** | `spark/jobs/transform.py` → `data/silver/retails_clean/` and `public.sales_clean` (cleaned, PII-hashed) |
 | **Gold** | `spark/jobs/analysis.py` → `data/gold/retails_analysis/` and Postgres tables (`total_revenue`, `top_products`, `monthly_sales`, `monthly_stats`) |
 | **SQL analysis** | `postgres/queries/analysis.sql` on `sales_clean` (complementary to PySpark gold outputs) |
-| **Orchestration** | Airflow DAG `sales_medallion_pipeline` (`airflow/dags/medallion_pipeline.py`): ingest → transform → analysis via `SparkSubmitOperator` |
-| **Runtime** | Docker Compose: Postgres, Spark master/worker, Airflow webserver and scheduler |
+| **Orchestration** | **`sales_medallion_pipeline`**: ingest → transform → analysis (`SparkSubmitOperator`); then triggers **`rag_index_pipeline`** |
+| **RAG batch** | `generate_reports.py` → `data/rag/docs/`; `index.py` → `public.rag_chunks` (pgvector init: `postgres/init/create_pgvector_db.sql`) |
+| **Runtime** | Docker Compose: Postgres (`pgvector/pgvector:pg16`), Spark master/worker, Airflow webserver and scheduler |
 
 **Required job order:** ingest → transform → analysis. Spark job details: [`spark/README.md`](spark/README.md).
 
@@ -74,7 +75,9 @@ docker compose up -d
 
 **On the first run:**
 
-- **Postgres** executes scripts in `postgres/init/` (including creation of the `airflow` metadata database).
+- **Postgres** (`pgvector/pgvector:pg16`) executes scripts in `postgres/init/`:
+  - `create_airflow_db.sql` — Airflow metadata database
+  - `create_pgvector_db.sql` — `vector` extension and `public.rag_chunks` table for the RAG layer
 - **`airflow-init`** runs once (`airflow db migrate` and admin user creation), then exits.
 - The other services remain active: Postgres, Spark master and worker, Airflow webserver and scheduler.
 
@@ -88,7 +91,7 @@ docker compose ps
 |---------|----------------|
 | Airflow UI | http://localhost:8088 (`admin` / `admin`) |
 | Spark UI | http://localhost:8080 |
-| PostgreSQL | `localhost:5432` (`postgres` / `postgres`, database `pipeline`) |
+| PostgreSQL | `localhost:5432` (`postgres` / `postgres`, database `pipeline`; includes pgvector) |
 
 ## 2. Run the pipeline (Spark)
 
@@ -141,7 +144,24 @@ Execute after `transform` has populated `sales_clean`:
 docker exec -i pipeline-postgres psql -U postgres -d pipeline < postgres/queries/analysis.sql
 ```
 
-## 4. Validate the results
+## 4. Validate Postgres (warehouse + pgvector)
+
+**List business and vector tables:**
+
+```bash
+docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\dt public.*"
+```
+
+You should see medallion tables (`sales_clean`, gold tables) and, from init, `rag_chunks` (empty until indexing — Airflow **`rag_index_pipeline`** or manual `python rag/jobs/index.py`; see [`ai/rag/README.md`](ai/rag/README.md)).
+
+**Verify pgvector:**
+
+```bash
+docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\dx vector"
+docker exec -it pipeline-postgres psql -U postgres -d pipeline -c "\d public.rag_chunks"
+```
+
+## 5. Validate the results
 
 **Verify the cleaned dataset** (loaded by `transform.py`):
 
@@ -205,18 +225,29 @@ Rough totals: ~£10.98M over 24 months; peak Aug 2011, low May 2010.
 - `data/bronze/retails_raw/`: raw Parquet files
 - `data/silver/retails_clean/`: cleaned Parquet files
 - `data/gold/retails_analysis/`: analytical Parquet outputs
+- `data/rag/docs/`: RAG markdown reports (written by Airflow; gitignored)
 
-## 5. Airflow (orchestration)
+## 6. Airflow (orchestration)
 
-After completing step 1, the Airflow UI is available. The pipeline is orchestrated by DAG **`sales_medallion_pipeline`** in [`airflow/dags/medallion_pipeline.py`](airflow/dags/medallion_pipeline.py). It runs **ingest → transform → analysis** on a `@daily` schedule using `SparkSubmitOperator` (same Spark jobs and JDBC packages as in step 2). See [`airflow/README.md`](airflow/README.md) for DAG details.
+Two DAGs — details in [`airflow/README.md`](airflow/README.md):
 
-1. Open http://localhost:8088 and sign in with `admin` / `admin`.
-2. Enable **`sales_medallion_pipeline`**.
-3. Use **Trigger DAG** for a manual run, or wait for the `@daily` schedule.
+| DAG | Schedule | Flow |
+|-----|----------|------|
+| **`sales_medallion_pipeline`** | `@daily` | ingest → transform → analysis → trigger RAG |
+| **`rag_index_pipeline`** | triggered / manual | generate reports → index pgvector |
 
-**SQL analysis** (`postgres/queries/analysis.sql`) is not part of the DAG: run it manually after `transform` has populated `sales_clean` (step 3).
+1. Open http://localhost:8088 (`admin` / `admin`).
+2. Enable **both DAGs**.
+3. Trigger **`sales_medallion_pipeline`** (or wait for `@daily`). After Spark analysis, it starts **`rag_index_pipeline`**.
 
-The scheduler is already configured to depend on Spark and Postgres. No additional initialization is required beyond `docker compose up -d`.
+**RAG tasks** ([`airflow/dags/rag_pipeline.py`](airflow/dags/rag_pipeline.py)):
+
+- `generate_rag_reports` — SQL fingerprint → rewrite `.md` in **`data/rag/docs/`** when the warehouse changed
+- `index_rag_docs` — chunk + embed → `public.rag_chunks` (requires **`LLM_API_KEY`** in `ai/.env` or Airflow Variable)
+
+Airflow runs as uid **50000** (same as Spark). It writes RAG output under **`data/rag/`**, not **`ai/rag/docs/`** (host-owned reference corpus for local dev).
+
+**SQL analysis** (`postgres/queries/analysis.sql`) is not in either DAG — run manually after `transform` (step 3).
 
 ## Reset the environment
 
@@ -236,4 +267,8 @@ Then repeat from **step 1**. The `airflow-init` service will run again on the ne
 | JDBC connection refused from Spark | Run jobs inside Docker (`pipeline-spark-master`); jobs default to `POSTGRES_HOST=postgres`. Override only if you run Spark outside Compose |
 | Permission errors on `airflow/logs` (SELinux) | Volume mounts use the `:z` flag; ensure the directory exists: `mkdir -p airflow/logs` |
 | `airflow-init` already completed | Expected on restart; the admin user is recreated only after `docker compose down -v` |
+| `extension "vector" is not available` / Postgres unhealthy on first boot | Use `pgvector/pgvector:pg16` in `docker-compose.yml` (not plain `postgres:16`), then `docker compose down -v && docker compose up -d` |
+| `pipeline-postgres` unhealthy after adding `create_pgvector_db.sql` | Init scripts run only on a fresh volume; reset with `docker compose down -v` after fixing the Postgres image |
 | Task `up_for_retry` / `Unable to clear output directory` | Parquet owned by another uid (e.g. old Spark runs as 1001). Reset: `docker exec -u root pipeline-spark-master rm -rf /opt/pipeline/data/bronze /opt/pipeline/data/silver /opt/pipeline/data/gold`, then **Clear** + **Trigger DAG**. Spark containers use `user: "50000:0"` to match Airflow |
+| `PermissionError` on `ai/rag/docs/` from Airflow | Expected — RAG batch writes to **`data/rag/docs/`** via `RAG_DOCS_DIR` in the RAG DAG |
+| `OpenAIError: Missing credentials` on `index_rag_docs` | Set `LLM_API_KEY` in `ai/.env` (mounted at `/opt/pipeline/ai/.env`) or `docker exec pipeline-airflow-scheduler airflow variables set LLM_API_KEY '…'` |

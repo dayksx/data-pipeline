@@ -11,4 +11,8 @@ USER airflow
 
 RUN pip install --no-cache-dir \
     apache-airflow-providers-apache-spark==4.8.1 \
-    pyspark==3.5.1
+    pyspark==3.5.1 \
+    psycopg[binary]>=3.1 \
+    pydantic-settings>=2.2 \
+    python-dotenv \
+    langchain-openai>=0.2

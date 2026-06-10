@@ -1,13 +1,14 @@
 from functools import lru_cache
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ai/semantic/ — sibling of ai/src/
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 SEMANTIC_DIR = Path(__file__).resolve().parents[2] / "semantic"
+RAG_DOCS_DIR = Path(__file__).resolve().parents[2] / "rag" / "docs"
 
 ALLOWED_TABLES = frozenset({
     "sales_clean",
@@ -38,6 +39,13 @@ class Settings(BaseSettings):
     sql_max_rows: int = 500
     sql_timeout_seconds: int = 10
 
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        validation_alias="EMBEDDING_MODEL",
+    )
+    rag_top_k: int = Field(default=4, validation_alias="RAG_TOP_K")
+    rag_docs_dir: Path = Field(default=RAG_DOCS_DIR, validation_alias="RAG_DOCS_DIR")
+
     @property
     def postgres_dsn(self) -> str:
         return (
@@ -45,9 +53,17 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
+        
+
 
 @lru_cache
 def get_settings() -> Settings:
     # LangChain/LangSmith read os.environ — pydantic alone does not export .env.
     load_dotenv(ENV_FILE, override=False)
-    return Settings()
+    settings = Settings()
+    # Airflow may inject LLM_API_KEY="" when the Variable is unset, which blocks dotenv.
+    if not settings.llm_api_key.strip() and ENV_FILE.exists():
+        file_key = (dotenv_values(ENV_FILE) or {}).get("LLM_API_KEY", "")
+        if file_key:
+            settings = settings.model_copy(update={"llm_api_key": file_key})
+    return settings
