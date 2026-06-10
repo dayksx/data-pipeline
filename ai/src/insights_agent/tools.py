@@ -13,6 +13,7 @@ from sqlglot import exp
 from insights_agent.config import ALLOWED_TABLES, get_settings
 from insights_agent.semantic_loader import build_semantic_context, get_metric, load_metrics
 
+from langchain_openai import OpenAIEmbeddings
 
 def _json_safe(obj: Any) -> Any:
     if isinstance(obj, (datetime, date)):
@@ -99,6 +100,34 @@ def validate_sql(query: str) -> SqlValidation:
     safe_sql = parsed.sql(dialect="postgres")
     return SqlValidation(True, safe_sql, [])
     
+
+def search_rag(query: str, top_k: int) -> dict:
+
+    settings = get_settings()
+    # Embed the query to get a vector
+    embedder = OpenAIEmbeddings(model=settings.embedding_model, api_key=settings.llm_api_key)
+    query_vector = embedder.embed_query(query)
+
+    with psycopg.connect(settings.postgres_dsn, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                # score = 1 - cosinus distance
+                """
+                SELECT source, section, content, 1 - (embedding <=> %s::vector) AS score
+                FROM public.rag_chunks
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (query_vector, query_vector, top_k),
+            )
+            rows = cur.fetchall()
+
+    if not rows:
+        return {"error": "index_empty", "hint": "Run RAG pipeline to populate the index"}
+
+    return {"chunks": rows, "query": query}
+
+# Agentic Tools
     
 @tool
 def get_semantic_layer() -> str:
@@ -155,5 +184,14 @@ def run_sql_readonly(query: str) -> str:
 
     return _dumps(result)
 
-TOOLS = [get_semantic_layer, run_gold_query, run_sql_readonly]
+@tool
+def search_analyses(query: str) -> str:
+    """Search qualitative analysis reports (anomalies, patterns, B2B context, data quality).
+    Use for WHY/HOW questions, not for live KPI numbers — use run_gold_query or run_sql_readonly for metrics."""
+
+    config = get_settings()
+
+    return _dumps(search_rag(query, config.rag_top_k))
+
+TOOLS = [get_semantic_layer, run_gold_query, run_sql_readonly, search_analyses]
 

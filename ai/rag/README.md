@@ -6,11 +6,11 @@ Qualitative analysis reports indexed in **pgvector** for the insights agent. Eac
 
 | File | Topic | Typical questions |
 |------|-------|-------------------|
-| `01-tendances-revenus-mensuels.md` | Monthly trends, Dec 2010 / Dec 2011 anomalies | « Why did revenue jump in December 2010? » |
-| `02-performance-produits.md` | Top products, volume vs revenue | « What are the bestsellers? » |
-| `03-repartition-geographique.md` | Country mix, Australia focus | « Which country earns the most? » |
-| `04-comportement-b2b.md` | Large baskets, wholesale profile | « Is this B2B or B2C? » |
-| `05-qualite-donnees-nettoyage.md` | Exclusions, cleaning impact | « Why is Utopia filtered out? » |
+| `01-monthly-revenue-trends.md` | Monthly trends, Dec 2010 / Dec 2011 anomalies | "Why did revenue jump in December 2010?" |
+| `02-product-performance.md` | Top products, volume vs revenue | "What are the bestsellers?" |
+| `03-geographic-distribution.md` | Country mix, Australia focus | "Which country earns the most?" |
+| `04-b2b-behavior.md` | Large baskets, wholesale profile | "Is this B2B or B2C?" |
+| `05-data-quality-cleaning.md` | Exclusions, cleaning impact | "Why is Utopia filtered out?" |
 
 Figures in the reports were computed from `data/retails.csv` using the same rules as `spark/jobs/transform.py`. **Live KPIs** should still come from SQL (`run_gold_query` / `run_sql_readonly`), not from RAG alone.
 
@@ -32,7 +32,7 @@ RAG chunks live in the **same Postgres instance** as the medallion warehouse (`p
 CREATE TABLE public.rag_chunks (
     id          SERIAL PRIMARY KEY,
     chunk_id    TEXT NOT NULL UNIQUE,   -- stable hash: source + section
-    source      TEXT NOT NULL,          -- e.g. 01-tendances-revenus-mensuels.md
+    source      TEXT NOT NULL,          -- e.g. 01-monthly-revenue-trends.md
     section     TEXT NOT NULL,          -- ## heading
     content     TEXT NOT NULL,          -- chunk text returned to the agent
     embedding   vector(1536) NOT NULL,
@@ -81,7 +81,7 @@ Expected output:
 ```json
 {
   "indexed": 38,
-  "sources": ["01-tendances-revenus-mensuels.md", "..."]
+  "sources": ["01-monthly-revenue-trends.md", "..."]
 }
 ```
 
@@ -100,7 +100,7 @@ Set Airflow Variable `LLM_API_KEY`. Task runs `python /opt/pipeline/ai/rag/jobs/
 
 See [`local/RAG-TUTORIAL.md`](../../local/RAG-TUTORIAL.md) Phase 6 for full setup.
 
-**Query** (once `search_analyses` tool is wired in the agent):
+**Query** (via `search_analyses` tool in the agent):
 
 ```bash
 insights ask "Why is December 2011 revenue low?" --verbose
@@ -129,10 +129,4 @@ docker exec -it pipeline-postgres psql -U postgres -d pipeline -c \
 | Layer | Path | How to run |
 |-------|------|------------|
 | **Batch** | `ai/rag/jobs/index.py` | `python rag/jobs/index.py` or Airflow `index_rag_docs` |
-| **Runtime** (later) | `ai/src/insights_agent/` | `retriever.py` + tool `search_analyses` |
-
-## Next steps
-
-1. Implement `rag/jobs/chunking.py` and `rag/jobs/index.py`
-2. Implement `insights_agent/rag/retriever.py` + `search_analyses` in `tools.py`
-3. Add Airflow task `index_rag_docs`
+| **Runtime** | `ai/src/insights_agent/tools.py` | `search_rag` + `@tool search_analyses` |
